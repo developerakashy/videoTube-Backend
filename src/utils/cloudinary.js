@@ -28,9 +28,9 @@ const uploadOnCloudinary = async (localFilePath) => {
     }
 }
 
-const destroyOnCloudinary = async (public_id) => {
+const destroyOnCloudinary = async (public_id, options = {resource_type: 'image'}) => {
     try {
-        const response = await cloudinary.uploader.destroy(public_id)
+        const response = await cloudinary.uploader.destroy(public_id, options)
 
         return response
     } catch (error) {

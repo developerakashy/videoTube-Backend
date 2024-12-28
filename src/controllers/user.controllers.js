@@ -4,7 +4,6 @@ import { ApiError } from "../utils/ApiError.js"
 import { asyncHandler } from "../utils/asyncRequestHandler.js"
 import { destroyOnCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js"
 import fs from 'fs'
-import jwt from "jsonwebtoken"
 
 
 const generateAccessAndRefreshToken = async (userId) => {
