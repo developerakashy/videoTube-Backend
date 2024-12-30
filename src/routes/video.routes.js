@@ -5,8 +5,8 @@ import { verifyJwtToken } from "../middlewares/auth.middlewares.js";
 
 const router = Router()
 
-router.route('/:videoId').get(getVideoById)
-router.route('/').get(getAllVideos)
+router.route('/:videoId').get(verifyJwtToken, getVideoById)
+router.route('/').get(verifyJwtToken, getAllVideos)
 
 
 //secured routes

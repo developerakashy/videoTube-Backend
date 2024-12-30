@@ -9,7 +9,13 @@ const verifyJwtToken = asyncHandler(async (req, res, next) => {
     const incomingAccessToken = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "")
     const incomingRefreshToken = req.cookies?.refreshToken || req.body.refreshToken
 
+
     if(!incomingAccessToken || !incomingRefreshToken){
+        if((req?.baseUrl === '/api/v1/video' || req?.baseUrl === '/api/v1/comment') && req?.method === 'GET'){
+
+            return next()
+        }
+
         throw new ApiError(400, 'user not loggedIn')
     }
 
@@ -27,7 +33,7 @@ const verifyJwtToken = asyncHandler(async (req, res, next) => {
         return next()
 
     } catch (error) {
-        console.log('access error')
+        console.warn('Access token expired')
         if(!(error?.name === 'TokenExpiredError')) throw new ApiError(400, error?.name)
     }
 
@@ -36,6 +42,7 @@ const verifyJwtToken = asyncHandler(async (req, res, next) => {
         secure: process.env.NODE_ENV === 'production'
     }
     try {
+        console.warn('New token creation using Refresh')
         const decodeToken = jwt.verify(incomingRefreshToken, process.env.ACCESS_TOKEN_SECRET)
 
         const user = await User.findById(decodeToken._id).select("-password")
@@ -45,9 +52,6 @@ const verifyJwtToken = asyncHandler(async (req, res, next) => {
         }
 
         if(user?.refreshToken !== incomingRefreshToken){
-            console.log(user)
-            console.log(incomingRefreshToken)
-            console.log(user?.refreshToken)
             throw new ApiError(400, 'Refresh token used or expired')
         }
 
@@ -65,7 +69,7 @@ const verifyJwtToken = asyncHandler(async (req, res, next) => {
             res.clearCookie('accessToken', options).clearCookie('refreshToken', options)
         }
 
-        throw new ApiError(400, error?.name || 'Token invalid or expired')
+        throw new ApiError(400, error?.message || 'Token invalid or expired')
     }
 })
 

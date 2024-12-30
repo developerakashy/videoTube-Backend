@@ -6,16 +6,18 @@ import fs from 'fs'
 import { destroyOnCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js";
 import mongoose from "mongoose";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import { verifyJwtToken } from "../middlewares/auth.middlewares.js";
+import { pipeline } from "stream";
 
 
 const getAllVideos = asyncHandler(async (req, res) => {
     let {page = 1, limit = 10, query = '', sortBy = 'createdAt', sortType = 'hightolow', userId } = req.query
 
-    if(!sortBy.trim()){
+    if(!sortBy?.trim()){
         sortBy = 'createdAt'
     }
 
-    if(!sortType.trim()){
+    if(!sortType?.trim()){
         sortType = 'hightolow'
     }
 
@@ -29,7 +31,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
     let pipeline = []
 
 
-    if(userId.trim()){
+    if(userId?.trim()){
         const user = await User.findById(userId)
 
         if(user){
@@ -42,24 +44,27 @@ const getAllVideos = asyncHandler(async (req, res) => {
 
     }
 
-    pipeline.push({
-        $lookup: {
-            from: 'users',
-            localField: 'owner',
-            foreignField: '_id',
-            as: 'userInfo'
+    pipeline.push(
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'owner',
+                foreignField: '_id',
+                as: 'userInfo'
+            }
         },
-    })
-
-    pipeline.push({
-        $addFields: {
-            userDetail: {
-                $first: '$userInfo'
+        {
+            $addFields: {
+                userDetail: {
+                    $first: '$userInfo'
+                }
             }
         }
-    })
+    )
 
-    if(query.trim()){
+
+
+    if(query?.trim()){
 
         pipeline.push({
             $match: {
@@ -73,6 +78,33 @@ const getAllVideos = asyncHandler(async (req, res) => {
         })
 
     }
+
+    const currentUser = req.user ? new mongoose.Types.ObjectId(req.user?._id) : ""
+
+    pipeline.push(
+        {
+            $lookup: {
+                from: 'likes',
+                localField: '_id',
+                foreignField: 'video',
+                as: 'videoLikeModel'
+            }
+        },
+        {
+            $addFields: {
+                likes: {
+                    $size : {
+                        $ifNull: [{$arrayElemAt: ['$videoLikeModel.users', 0]}, []]
+                    }
+                },
+                userLiked: {
+                    $in: [currentUser, {$ifNull: [{$arrayElemAt: ['$videoLikeModel.users', 0]}, []]}]
+                }
+            }
+        }
+
+    )
+
 
     pipeline.push({
         $sort: {
@@ -95,7 +127,10 @@ const getAllVideos = asyncHandler(async (req, res) => {
             duration: 1,
             createdAt: 1,
             updatedAt: 1,
-            isPublished: 1
+            isPublished: 1,
+            userLiked: 1,
+            likes: 1
+
         }
     })
 
@@ -220,8 +255,75 @@ const publishAVideo = asyncHandler(async (req, res) => {
 const getVideoById = asyncHandler(async (req, res) => {
     const {videoId} = req.params
 
+    const pipeline = []
+
+    const currentUser = req.user ? new mongoose.Types.ObjectId(req.user?._id) : ""
+
+    pipeline.push(
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'owner',
+                foreignField: '_id',
+                as: 'userInfo'
+            }
+        },
+        {
+            $addFields: {
+                userDetail: {
+                    $first: '$userInfo'
+                }
+            }
+        }
+    )
+
+    pipeline.push(
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(videoId)
+            }
+        },
+        {
+            $lookup: {
+                from: 'likes',
+                localField: '_id',
+                foreignField: 'video',
+                as: 'videoLikeModel'
+            }
+        },
+        {
+            $addFields: {
+                likes: {
+                    $size : {
+                        $ifNull: [{$arrayElemAt: ['$videoLikeModel.users', 0]}, []]
+                    }
+                },
+                userLiked: {
+                    $in: [currentUser, {$ifNull: [{$arrayElemAt: ['$videoLikeModel.users', 0]}, []]}]
+                }
+            }
+        },
+        {
+            $project: {
+                userDetail: 1,
+                video: 1,
+                thumbnail: 1,
+                title: 1,
+                description: 1,
+                duration: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                isPublished: 1,
+                userLiked: 1,
+                likes: 1
+
+            }
+        }
+
+    )
+
     try {
-        const video = await Video.findById(videoId)
+        const video = await Video.aggregate(pipeline)
 
         return res.status(200).json(new ApiResponse(200, video, 'video fetched successfully'))
     } catch (error) {
@@ -364,6 +466,10 @@ const deleteVideoById = asyncHandler(async (req, res) => {
     const { videoId } = req.params
 
     const video = await Video.findById(videoId)
+
+    if(!video){
+        throw new ApiError(400, 'unable to locate video')
+    }
 
 
     if(req.user._id.toString() !== video.owner.toString()){
